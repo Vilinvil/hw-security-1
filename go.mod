@@ -1,1 +1,3 @@
-module hw-security-1
+module github.com/Vilinvil/hw-security-1
+
+go 1.22.0
