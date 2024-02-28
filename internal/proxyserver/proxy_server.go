@@ -22,9 +22,17 @@ type ProxyServer struct {
 func (p *ProxyServer) Run(config *config.Config) error {
 	baseCtx := context.Background()
 
+	tlsServerConfig := &tls.Config{ //nolint:exhaustruct
+		ServerName: config.HostServer,
+		MinVersion: tls.VersionTLS12,
+	}
+
 	handler, err := mux.NewMux(baseCtx, &proxyhandler.Config{
-		ModeTLS:      config.ModeTLS,
-		BasicTimeout: config.BasicTimeout,
+		ModeTLS:         config.ModeTLS,
+		CertFileTLS:     config.CertFileTLS,
+		KeyFileTLS:      config.KeyFileTLS,
+		TLSServerConfig: tlsServerConfig,
+		BasicTimeout:    config.BasicTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf(myerrors.ErrTemplate, err)
@@ -36,7 +44,7 @@ func (p *ProxyServer) Run(config *config.Config) error {
 		MaxHeaderBytes: http.DefaultMaxHeaderBytes,
 		ReadTimeout:    CoefficientReadServerTimeout * config.BasicTimeout,
 		WriteTimeout:   config.BasicTimeout,
-		TLSConfig:      &tls.Config{ServerName: config.HostServer},
+		TLSConfig:      tlsServerConfig,
 	}
 
 	log.Printf("Start server:%s\n", config.PortServer)

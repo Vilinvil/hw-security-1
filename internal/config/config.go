@@ -21,10 +21,10 @@ const (
 	// Represents time in ms.
 	EnvBasicTimeout = "BASIC_TIMEOUT"
 
-	DefaultPortServer   = "8081"
+	DefaultPortServer   = "8080"
 	DefaultHostServer   = "localhost"
-	DefaultCertFileTLS  = "localhost.crt"
-	DefaultKeyFileTLS   = "localhost.key"
+	DefaultCertFileTLS  = "ca.crt"
+	DefaultKeyFileTLS   = "ca.key"
 	DefaultModeTLS      = "DISABLE_TLS"
 	ModeEnableTLS       = "ENABLE_TLS"
 	DefaultBasicTimeout = "10"
