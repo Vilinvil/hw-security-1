@@ -53,41 +53,7 @@ func NewProxyHandler(_ context.Context, config *Config) (*ProxyHandler, error) {
 	return proxyHandler, nil
 }
 
-func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
-	certRaw, err := os.ReadFile(certFile)
-	if err != nil {
-		log.Println(err)
-
-		return fmt.Errorf(myerrors.ErrTemplate, err)
-	}
-
-	keyRaw, err := os.ReadFile(keyFile)
-	if err != nil {
-		log.Println(err)
-
-		return fmt.Errorf(myerrors.ErrTemplate, err)
-	}
-
-	certX509, err := tls.X509KeyPair(certRaw, keyRaw)
-	if err != nil {
-		log.Println(err)
-
-		return fmt.Errorf(myerrors.ErrTemplate, err)
-	}
-
-	certX509.Leaf, err = x509.ParseCertificate(certX509.Certificate[0])
-	if err != nil {
-		log.Println(err)
-
-		return fmt.Errorf(myerrors.ErrTemplate, err)
-	}
-
-	p.certCA = &certX509
-
-	return nil
-}
-
-func (p *ProxyHandler) Proxy(w http.ResponseWriter, r *http.Request) {
+func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		p.handleTunneling(w, r)
 
@@ -130,6 +96,40 @@ func (p *ProxyHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	httputils.WriteSlByte(w, respBody)
 }
 
+func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
+	certRaw, err := os.ReadFile(certFile)
+	if err != nil {
+		log.Println(err)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	keyRaw, err := os.ReadFile(keyFile)
+	if err != nil {
+		log.Println(err)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	certX509, err := tls.X509KeyPair(certRaw, keyRaw)
+	if err != nil {
+		log.Println(err)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	certX509.Leaf, err = x509.ParseCertificate(certX509.Certificate[0])
+	if err != nil {
+		log.Println(err)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	p.certCA = &certX509
+
+	return nil
+}
+
 func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
@@ -149,7 +149,6 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 
 	clientConn, err := handshake(w, p.tlsServerConfig)
 	if err != nil {
-		log.Println(err)
 		http.Error(w, httputils.InternalErrorMessage, http.StatusInternalServerError)
 
 		return
@@ -228,6 +227,8 @@ func handshake(w http.ResponseWriter, config *tls.Config) (net.Conn, error) {
 
 	err = conn.Handshake()
 	if err != nil {
+		log.Println(err)
+
 		errClose := conn.Close()
 		if err != nil {
 			log.Println(errClose)
