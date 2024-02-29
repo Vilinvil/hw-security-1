@@ -75,11 +75,15 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp, err := p.client.Do(r)
 	if err != nil {
 		log.Println(err)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
 		return
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	deliveryutil.RemoveHopByHopHeaders(resp.Header)
+	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertResponseToString(resp))
+
+	_, err = io.Copy(w, resp.Body)
 	if err != nil {
 		log.Println(err)
 		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
@@ -90,10 +94,9 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = resp.Body.Close()
 	if err != nil {
 		log.Println(err)
-	}
 
-	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertResponseToString(resp))
-	deliveryutil.WriteSlByte(w, respBody)
+		return
+	}
 }
 
 func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
