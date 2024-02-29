@@ -1,4 +1,4 @@
-package httputils
+package deliveryutil
 
 import (
 	"log"

@@ -1,4 +1,4 @@
-package httputils
+package deliveryutil
 
 import (
 	"fmt"
@@ -9,9 +9,33 @@ import (
 	"github.com/Vilinvil/hw-security-1/pkg/myerrors"
 )
 
-const (
-	HeaderProxyConnection = "Proxy-Connection"
-)
+const connectionHeader = "Connection"
+
+var hopByHopHeaders = []string{ //nolint:gochecknoglobals
+	connectionHeader,
+	"Proxy-Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+func removeConnectionHeaders(header http.Header) {
+	for _, field := range header[connectionHeader] {
+		header.Del(field)
+	}
+}
+
+func RemoveHopByHopHeaders(header http.Header) {
+	removeConnectionHeaders(header)
+
+	for _, hopByHopHeader := range hopByHopHeaders {
+		header.Del(hopByHopHeader)
+	}
+}
 
 var (
 	RequestNil    = myerrors.NewError("request is nil")     //nolint:gochecknoglobals

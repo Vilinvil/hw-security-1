@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Vilinvil/hw-security-1/pkg/cert"
-	"github.com/Vilinvil/hw-security-1/pkg/httputils"
+	"github.com/Vilinvil/hw-security-1/pkg/deliveryutil"
 	"github.com/Vilinvil/hw-security-1/pkg/myerrors"
 )
 
@@ -60,12 +60,12 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := httputils.SetForwardedHeader(r)
+	err := deliveryutil.SetForwardedHeader(r)
 	if err != nil {
 		return
 	}
 
-	r.Header.Del(httputils.HeaderProxyConnection)
+	deliveryutil.RemoveHopByHopHeaders(r.Header)
 
 	log.Println(r)
 	log.Println("______________________")
@@ -82,7 +82,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Println(err)
-		http.Error(w, httputils.InternalErrorMessage, http.StatusInternalServerError)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
 		return
 	}
@@ -92,8 +92,8 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 	}
 
-	httputils.WriteOkHTTP(w, httputils.ConvertResponseToString(resp))
-	httputils.WriteSlByte(w, respBody)
+	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertResponseToString(resp))
+	deliveryutil.WriteSlByte(w, respBody)
 }
 
 func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
@@ -140,7 +140,7 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 	hostCert, err := cert.GenCert(p.certCA, []string{host})
 	if err != nil {
 		log.Println(err)
-		http.Error(w, httputils.InternalErrorMessage, http.StatusInternalServerError)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
 		return
 	}
@@ -149,8 +149,6 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 
 	clientConn, err := handshake(w, p.tlsServerConfig)
 	if err != nil {
-		http.Error(w, httputils.InternalErrorMessage, http.StatusInternalServerError)
-
 		return
 	}
 
@@ -207,7 +205,7 @@ func handshake(w http.ResponseWriter, config *tls.Config) (net.Conn, error) {
 	raw, _, err := hijacker.Hijack()
 	if err != nil {
 		log.Println(err)
-		http.Error(w, httputils.InternalErrorMessage, http.StatusInternalServerError)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
 		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
 	}
