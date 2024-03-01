@@ -16,6 +16,11 @@ func ConvertHeadersToString(headers http.Header) string {
 }
 
 func ConvertResponseToString(resp *http.Response) string {
-	return fmt.Sprintf(`%s %d %s
-%+v`, resp.Proto, resp.StatusCode, resp.Status, ConvertHeadersToString(resp.Header))
+	return fmt.Sprintf("%s %d %s \n%s",
+		resp.Proto, resp.StatusCode, resp.Status, ConvertHeadersToString(resp.Header))
+}
+
+func ConvertRequestToString(r *http.Request) string {
+	return fmt.Sprintf("%s %s %s \n%s",
+		r.Method, r.URL.Path, r.Proto, ConvertHeadersToString(r.Header))
 }

@@ -1,15 +1,19 @@
 package proxyhandler
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Vilinvil/hw-security-1/pkg/cert"
@@ -54,49 +58,15 @@ func NewProxyHandler(_ context.Context, config *Config) (*ProxyHandler, error) {
 }
 
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Println(deliveryutil.ConvertRequestToString(r), "\n______________________")
+
 	if r.Method == http.MethodConnect {
 		p.handleTunneling(w, r)
 
 		return
 	}
 
-	err := deliveryutil.SetForwardedHeader(r)
-	if err != nil {
-		return
-	}
-
-	deliveryutil.RemoveHopByHopHeaders(r.Header)
-
-	log.Println(r)
-	log.Println("______________________")
-
-	r.RequestURI = ""
-
-	resp, err := p.client.Do(r)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
-		return
-	}
-
-	deliveryutil.RemoveHopByHopHeaders(resp.Header)
-	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertResponseToString(resp))
-
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
-		return
-	}
-
-	err = resp.Body.Close()
-	if err != nil {
-		log.Println(err)
-
-		return
-	}
+	p.handleRequest(w, r)
 }
 
 func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
@@ -133,6 +103,8 @@ func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
 	return nil
 }
 
+var ErrUncorrectedHost = myerrors.NewError("не правильный HOST в запросе")
+
 func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
@@ -150,98 +122,173 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 
 	p.tlsServerConfig.Certificates = append(p.tlsServerConfig.Certificates, *hostCert)
 
-	clientConn, err := handshake(w, p.tlsServerConfig)
+	clientConn, err := hijackClientConnection(w)
 	if err != nil {
+		deliveryutil.WriteRawResponseHTTP1(clientConn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
 		return
 	}
 
-	serverConn, err := net.DialTimeout("tcp", r.Host, p.basicTimeout)
+	tlsConn := tls.Server(clientConn, p.tlsServerConfig)
+	defer func() {
+		err = tlsConn.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
+
+	connReader := bufio.NewReader(tlsConn)
+
+	for {
+		err = p.doOneExchangeReqResp(connReader, tlsConn, r.Host)
+		if err != nil {
+			break
+		}
+	}
+}
+
+func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader, conn net.Conn, targetHost string) error {
+	reqToTarget, err := http.ReadRequest(connReader)
+	if errors.Is(err, io.EOF) {
+		return io.EOF
+	} else if err != nil {
+		log.Println(err)
+		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	log.Println(deliveryutil.ConvertRequestToString(reqToTarget), "\n______________________")
+
+	err = changeRequestToTarget(reqToTarget, targetHost)
+	if err != nil {
+		deliveryutil.WriteRawResponseHTTP1(conn, ErrUncorrectedHost.Error(), http.StatusBadRequest)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	resp, err := p.client.Do(reqToTarget)
 	if err != nil {
 		log.Println(err)
-		http.Error(w, httputils.InternalErrorMessage, http.StatusInternalServerError)
+		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
-		return
+		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
 
-	chDoneWrite := make(chan struct{})
-	go func() {
-		_, err := io.Copy(serverConn, clientConn)
+	defer func() {
+		err = resp.Body.Close()
 		if err != nil {
 			log.Println(err)
 		}
-		chDoneWrite <- struct{}{}
 	}()
-	go func() {
-		<-chDoneWrite
 
-		_, err := io.Copy(clientConn, serverConn)
-		if err != nil {
-			log.Println(err)
-		}
+	if err := resp.Write(conn); err != nil {
+		log.Println(err)
+		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
-		errClose := clientConn.Close()
-		if errClose != nil {
-			log.Println(errClose)
-		}
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
 
-		errClose = serverConn.Close()
-		if errClose != nil {
-			log.Println(errClose)
-		}
-	}()
+	return nil
+}
+
+func changeRequestToTarget(req *http.Request, targetHost string) error {
+	targetURL, err := convertAddrToURL(targetHost)
+	if err != nil {
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	targetURL.Path = req.URL.Path
+	targetURL.RawQuery = req.URL.RawQuery
+	req.URL = targetURL
+	req.RequestURI = ""
+
+	return nil
+}
+
+func convertAddrToURL(addr string) (*url.URL, error) {
+	if !strings.HasPrefix(addr, "https") {
+		addr = "https://" + addr
+	}
+
+	fullURL, err := url.Parse(addr)
+	if err != nil {
+		log.Println(err)
+
+		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	return fullURL, nil
 }
 
 var ErrHijacker = myerrors.NewError("error type assert Hijacker")
 
-const okHeader = "HTTP/1.1 200 OK\r\n\r\n"
+const okResponse = "HTTP/1.1 200 OK\r\n\r\n"
 
-// handshake hijacks w's underlying net.Conn, responds to the CONNECT request
-// and manually performs the TLS handshake.
-func handshake(w http.ResponseWriter, config *tls.Config) (net.Conn, error) {
+func hijackClientConnection(w http.ResponseWriter) (net.Conn, error) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		log.Println(ErrHijacker)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
 		return nil, fmt.Errorf(myerrors.ErrTemplate, ErrHijacker)
 	}
 
-	raw, _, err := hijacker.Hijack()
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		log.Println(err)
+		deliveryutil.WriteRawResponseHTTP1(clientConn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	if _, err = clientConn.Write([]byte(okResponse)); err != nil {
+		log.Println(err)
+		deliveryutil.WriteRawResponseHTTP1(clientConn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		errClose := clientConn.Close()
+		if err != nil {
+			log.Println(errClose)
+		}
+
+		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	return clientConn, nil
+}
+
+func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
+	err := deliveryutil.SetForwardedHeader(r)
+	if err != nil {
+		return
+	}
+
+	deliveryutil.RemoveHopByHopHeaders(r.Header)
+	r.RequestURI = ""
+
+	resp, err := p.client.Do(r)
 	if err != nil {
 		log.Println(err)
 		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
-		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
+		return
 	}
 
-	if _, err = raw.Write([]byte(okHeader)); err != nil {
+	deliveryutil.RemoveHopByHopHeaders(resp.Header)
+	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertResponseToString(resp))
+
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
 		log.Println(err)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
-		errClose := raw.Close()
-		if err != nil {
-			log.Println(errClose)
-		}
-
-		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
+		return
 	}
 
-	conn := tls.Server(raw, config)
-
-	err = conn.Handshake()
+	err = resp.Body.Close()
 	if err != nil {
 		log.Println(err)
 
-		errClose := conn.Close()
-		if err != nil {
-			log.Println(errClose)
-		}
-
-		errClose = raw.Close()
-		if err != nil {
-			log.Println(errClose)
-		}
-
-		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
+		return
 	}
-
-	return conn, nil
 }

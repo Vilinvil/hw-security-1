@@ -29,6 +29,8 @@ const (
 
 var ErrCertCA = myerrors.NewError("CA cert is not a CA")
 
+const maxDigitInSerialNumberCert = 128
+
 func GenCert(certCA *tls.Certificate, names []string) (*tls.Certificate, error) {
 	now := time.Now().Add(-1 * time.Hour).UTC()
 
@@ -38,7 +40,7 @@ func GenCert(certCA *tls.Certificate, names []string) (*tls.Certificate, error) 
 		return nil, ErrCertCA
 	}
 
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), maxDigitInSerialNumberCert)
 
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
