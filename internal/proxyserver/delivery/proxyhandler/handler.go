@@ -11,9 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Vilinvil/hw-security-1/pkg/cert"
@@ -140,14 +138,16 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 	connReader := bufio.NewReader(tlsConn)
 
 	for {
-		err = p.doOneExchangeReqResp(connReader, tlsConn, r.Host)
+		err = p.doOneExchangeReqResp(connReader, tlsConn, r.Host, r.RemoteAddr)
 		if err != nil {
 			break
 		}
 	}
 }
 
-func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader, conn net.Conn, targetHost string) error {
+func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
+	conn net.Conn, targetHost string, remoteAddr string,
+) error {
 	reqToTarget, err := http.ReadRequest(connReader)
 	if errors.Is(err, io.EOF) {
 		return io.EOF
@@ -158,14 +158,16 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader, conn net.C
 		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
 
-	log.Println(deliveryutil.ConvertBeginRequestToString(reqToTarget), "\n______________________")
+	reqToTarget.RemoteAddr = remoteAddr
 
-	err = changeRequestToTarget(reqToTarget, targetHost)
+	err = deliveryutil.ChangeRequestToTarget(reqToTarget, targetHost)
 	if err != nil {
 		deliveryutil.WriteRawResponseHTTP1(conn, ErrUncorrectedHost.Error(), http.StatusBadRequest)
 
 		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
+
+	log.Println(deliveryutil.ConvertBeginRequestToString(reqToTarget), "\n______________________")
 
 	resp, err := p.client.Do(reqToTarget)
 	if err != nil {
@@ -182,7 +184,19 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader, conn net.C
 		}
 	}()
 
-	if err := resp.Write(conn); err != nil {
+	deliveryutil.RemoveHopByHopHeaders(resp.Header)
+
+	result, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
+	if err != nil {
+		log.Println(err)
+		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return fmt.Errorf(myerrors.ErrTemplate, err)
+	}
+
+	resp.Body = result
+
+	if err = resp.Write(conn); err != nil {
 		log.Println(err)
 		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
@@ -190,35 +204,6 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader, conn net.C
 	}
 
 	return nil
-}
-
-func changeRequestToTarget(req *http.Request, targetHost string) error {
-	targetURL, err := convertAddrToURL(targetHost)
-	if err != nil {
-		return fmt.Errorf(myerrors.ErrTemplate, err)
-	}
-
-	targetURL.Path = req.URL.Path
-	targetURL.RawQuery = req.URL.RawQuery
-	req.URL = targetURL
-	req.RequestURI = ""
-
-	return nil
-}
-
-func convertAddrToURL(addr string) (*url.URL, error) {
-	if !strings.HasPrefix(addr, "https") {
-		addr = "https://" + addr
-	}
-
-	fullURL, err := url.Parse(addr)
-	if err != nil {
-		log.Println(err)
-
-		return nil, fmt.Errorf(myerrors.ErrTemplate, err)
-	}
-
-	return fullURL, nil
 }
 
 var ErrHijacker = myerrors.NewError("error type assert Hijacker")
@@ -258,13 +243,12 @@ func hijackClientConnection(w http.ResponseWriter) (net.Conn, error) {
 }
 
 func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
-	err := deliveryutil.SetForwardedHeader(r)
+	err := deliveryutil.ChangeRequestToTarget(r, r.Host)
 	if err != nil {
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
 		return
 	}
-
-	deliveryutil.RemoveHopByHopHeaders(r.Header)
-	r.RequestURI = ""
 
 	resp, err := p.client.Do(r)
 	if err != nil {
@@ -277,7 +261,16 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 	deliveryutil.RemoveHopByHopHeaders(resp.Header)
 	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertBeginResponseToString(resp))
 
-	_, err = io.Copy(w, resp.Body)
+	resultBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
+	if err != nil {
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return
+	}
+
+	deliveryutil.WriteSlByte(w, []byte(deliveryutil.ConvertBeginResponseToString(resp)))
+
+	_, err = io.Copy(w, resultBody)
 	if err != nil {
 		log.Println(err)
 		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
