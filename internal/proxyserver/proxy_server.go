@@ -23,7 +23,7 @@ func (p *ProxyServer) Run(config *config.Config) error {
 
 	tlsServerConfig := &tls.Config{ //nolint:exhaustruct
 		ServerName: config.HostServer,
-		MinVersion: tls.VersionTLS12,
+		MinVersion: tls.VersionTLS13,
 	}
 
 	proxyHandler, err := proxyhandler.NewProxyHandler(baseCtx, &proxyhandler.Config{
