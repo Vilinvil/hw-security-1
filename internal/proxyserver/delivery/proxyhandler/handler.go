@@ -58,7 +58,7 @@ func NewProxyHandler(_ context.Context, config *Config) (*ProxyHandler, error) {
 }
 
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println(deliveryutil.ConvertRequestToString(r), "\n______________________")
+	log.Println(deliveryutil.ConvertBeginRequestToString(r), "\n______________________")
 
 	if r.Method == http.MethodConnect {
 		p.handleTunneling(w, r)
@@ -158,7 +158,7 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader, conn net.C
 		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
 
-	log.Println(deliveryutil.ConvertRequestToString(reqToTarget), "\n______________________")
+	log.Println(deliveryutil.ConvertBeginRequestToString(reqToTarget), "\n______________________")
 
 	err = changeRequestToTarget(reqToTarget, targetHost)
 	if err != nil {
@@ -275,7 +275,7 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deliveryutil.RemoveHopByHopHeaders(resp.Header)
-	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertResponseToString(resp))
+	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertBeginResponseToString(resp))
 
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
