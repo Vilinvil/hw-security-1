@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	config, err := config.New()
+	configProxyServer, err := config.New()
 	if err != nil {
 		log.Println(err)
 
@@ -17,7 +17,7 @@ func main() {
 	}
 
 	server := new(proxyserver.ProxyServer)
-	if err := server.Run(config); err != nil {
-
+	if err := server.Run(configProxyServer); err != nil {
+		log.Println(err)
 	}
 }
