@@ -48,7 +48,7 @@ var (
 
 const (
 	acceptEncodingHeader = "Accept-Encoding"
-	gzipHeader           = "gzip"
+	gzipValueHeader      = "gzip"
 )
 
 func setForwardedHeader(r *http.Request) error {
@@ -88,7 +88,7 @@ func ChangeRequestToTarget(r *http.Request, targetHost string) error {
 		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
 
-	r.Header.Set(acceptEncodingHeader, gzipHeader)
+	r.Header.Set(acceptEncodingHeader, gzipValueHeader)
 
 	targetURL.Path = r.URL.Path
 	targetURL.RawQuery = r.URL.RawQuery
@@ -116,7 +116,7 @@ func convertAddrToURL(addr string) (*url.URL, error) {
 const headerContentEncoding = "Content-Encoding"
 
 func ConvertRespBodyToReadCloserWithTryDecode(resp *http.Response) (io.ReadCloser, error) {
-	if resp.Header.Get(headerContentEncoding) == gzipHeader {
+	if resp.Header.Get(headerContentEncoding) == gzipValueHeader {
 		resp.Header.Del(headerContentEncoding)
 
 		decodedReader, err := gzip.NewReader(resp.Body)
@@ -130,4 +130,15 @@ func ConvertRespBodyToReadCloserWithTryDecode(resp *http.Response) (io.ReadClose
 	}
 
 	return resp.Body, nil
+}
+
+func IsAcceptGzip(r *http.Request) bool {
+	valuesAcceptEncoding := r.Header.Values(acceptEncodingHeader)
+	for _, value := range valuesAcceptEncoding {
+		if value == gzipValueHeader {
+			return true
+		}
+	}
+
+	return false
 }

@@ -90,7 +90,7 @@ func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
 }
 
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println(deliveryutil.FormatBeginRequestToString(r), "\n______________________")
+	log.Println("ACCESS LOG: \n", deliveryutil.FormatBeginRequestToString(r))
 
 	if r.Method == http.MethodConnect {
 		p.handleTunneling(w, r)
@@ -161,19 +161,38 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
+
 	deliveryutil.RemoveHopByHopHeaders(resp.Header)
-	deliveryutil.WriteOkHTTP(w, deliveryutil.FormatBeginResponseToString(resp))
+	deliveryutil.AddAllHeaders(w, resp.Header)
 
-	resultBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
-	if err != nil {
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+	var preparedBody io.ReadCloser
 
-		return
+	if !deliveryutil.IsAcceptGzip(r) {
+		preparedBody, err = deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+			return
+		}
+	} else {
+		preparedBody = resp.Body
 	}
 
-	deliveryutil.WriteSlByte(w, []byte(deliveryutil.FormatBeginResponseToString(resp)))
+	defer func() {
+		err = preparedBody.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
 
-	_, err = io.Copy(w, resultBody)
+	_, err = io.Copy(w, preparedBody)
 	if err != nil {
 		log.Println(err)
 		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
@@ -181,12 +200,7 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = resp.Body.Close()
-	if err != nil {
-		log.Println(err)
-
-		return
-	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
@@ -211,8 +225,6 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
 		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
 
-	log.Println(deliveryutil.FormatBeginRequestToString(reqToTarget), "\n______________________")
-
 	resp, err := p.client.Do(reqToTarget)
 	if err != nil {
 		log.Println(err)
@@ -230,15 +242,17 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
 
 	deliveryutil.RemoveHopByHopHeaders(resp.Header)
 
-	result, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
-	if err != nil {
-		log.Println(err)
-		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+	if !deliveryutil.IsAcceptGzip(reqToTarget) {
+		preparedBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
+		if err != nil {
+			log.Println(err)
+			deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
-		return fmt.Errorf(myerrors.ErrTemplate, err)
+			return fmt.Errorf(myerrors.ErrTemplate, err)
+		}
+
+		resp.Body = preparedBody
 	}
-
-	resp.Body = result
 
 	if err = resp.Write(conn); err != nil {
 		log.Println(err)
