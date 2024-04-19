@@ -55,18 +55,6 @@ func NewProxyHandler(_ context.Context, config *Config) (*ProxyHandler, error) {
 	return proxyHandler, nil
 }
 
-func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println(deliveryutil.FormatBeginRequestToString(r), "\n______________________")
-
-	if r.Method == http.MethodConnect {
-		p.handleTunneling(w, r)
-
-		return
-	}
-
-	p.handleRequest(w, r)
-}
-
 func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
 	certRaw, err := os.ReadFile(certFile)
 	if err != nil {
@@ -99,6 +87,18 @@ func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
 	p.certCA = &certX509
 
 	return nil
+}
+
+func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Println(deliveryutil.FormatBeginRequestToString(r), "\n______________________")
+
+	if r.Method == http.MethodConnect {
+		p.handleTunneling(w, r)
+
+		return
+	}
+
+	p.handleRequest(w, r)
 }
 
 var ErrUncorrectedHost = myerrors.NewError("не правильный HOST в запросе")
@@ -142,6 +142,50 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
+	}
+}
+
+func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
+	err := deliveryutil.ChangeRequestToTarget(r, r.Host)
+	if err != nil {
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return
+	}
+
+	resp, err := p.client.Do(r)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return
+	}
+
+	deliveryutil.RemoveHopByHopHeaders(resp.Header)
+	deliveryutil.WriteOkHTTP(w, deliveryutil.FormatBeginResponseToString(resp))
+
+	resultBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
+	if err != nil {
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return
+	}
+
+	deliveryutil.WriteSlByte(w, []byte(deliveryutil.FormatBeginResponseToString(resp)))
+
+	_, err = io.Copy(w, resultBody)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
+
+		return
+	}
+
+	err = resp.Body.Close()
+	if err != nil {
+		log.Println(err)
+
+		return
 	}
 }
 
@@ -240,48 +284,4 @@ func hijackClientConnection(w http.ResponseWriter) (net.Conn, error) {
 	}
 
 	return clientConn, nil
-}
-
-func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
-	err := deliveryutil.ChangeRequestToTarget(r, r.Host)
-	if err != nil {
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
-		return
-	}
-
-	resp, err := p.client.Do(r)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
-		return
-	}
-
-	deliveryutil.RemoveHopByHopHeaders(resp.Header)
-	deliveryutil.WriteOkHTTP(w, deliveryutil.FormatBeginResponseToString(resp))
-
-	resultBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
-	if err != nil {
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
-		return
-	}
-
-	deliveryutil.WriteSlByte(w, []byte(deliveryutil.FormatBeginResponseToString(resp)))
-
-	_, err = io.Copy(w, resultBody)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
-		return
-	}
-
-	err = resp.Body.Close()
-	if err != nil {
-		log.Println(err)
-
-		return
-	}
 }
