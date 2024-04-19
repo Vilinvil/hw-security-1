@@ -56,7 +56,7 @@ func NewProxyHandler(_ context.Context, config *Config) (*ProxyHandler, error) {
 }
 
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println(deliveryutil.ConvertBeginRequestToString(r), "\n______________________")
+	log.Println(deliveryutil.FormatBeginRequestToString(r), "\n______________________")
 
 	if r.Method == http.MethodConnect {
 		p.handleTunneling(w, r)
@@ -167,7 +167,7 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
 		return fmt.Errorf(myerrors.ErrTemplate, err)
 	}
 
-	log.Println(deliveryutil.ConvertBeginRequestToString(reqToTarget), "\n______________________")
+	log.Println(deliveryutil.FormatBeginRequestToString(reqToTarget), "\n______________________")
 
 	resp, err := p.client.Do(reqToTarget)
 	if err != nil {
@@ -259,7 +259,7 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deliveryutil.RemoveHopByHopHeaders(resp.Header)
-	deliveryutil.WriteOkHTTP(w, deliveryutil.ConvertBeginResponseToString(resp))
+	deliveryutil.WriteOkHTTP(w, deliveryutil.FormatBeginResponseToString(resp))
 
 	resultBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
 	if err != nil {
@@ -268,7 +268,7 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deliveryutil.WriteSlByte(w, []byte(deliveryutil.ConvertBeginResponseToString(resp)))
+	deliveryutil.WriteSlByte(w, []byte(deliveryutil.FormatBeginResponseToString(resp)))
 
 	_, err = io.Copy(w, resultBody)
 	if err != nil {
