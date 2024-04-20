@@ -90,8 +90,6 @@ func (p *ProxyHandler) initCertCA(certFile, keyFile string) error {
 }
 
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println("ACCESS LOG: \n", deliveryutil.FormatBeginRequestToString(r))
-
 	if r.Method == http.MethodConnect {
 		p.handleTunneling(w, r)
 
@@ -122,8 +120,6 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 
 	clientConn, err := hijackClientConnection(w)
 	if err != nil {
-		deliveryutil.WriteRawResponseHTTP1(clientConn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
-
 		return
 	}
 
@@ -253,7 +249,7 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
 	}
 
 	if err = resp.Write(conn); err != nil {
-		log.Println(err)
+		log.Printf("FOR REQ: %s %+v\n", deliveryutil.FormatRequestToString(reqToTarget), err)
 		deliveryutil.WriteRawResponseHTTP1(conn, deliveryutil.InternalErrorMessage, http.StatusInternalServerError)
 
 		return fmt.Errorf(myerrors.ErrTemplate, err)

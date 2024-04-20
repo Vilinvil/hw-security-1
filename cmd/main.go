@@ -16,6 +16,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.SetFlags(log.Llongfile)
+
 	server := new(proxyserver.ProxyServer)
 	if err := server.Run(configProxyServer); err != nil {
 		log.Println(err)

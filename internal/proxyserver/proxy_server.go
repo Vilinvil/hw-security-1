@@ -9,6 +9,7 @@ import (
 
 	"github.com/Vilinvil/hw-security-1/internal/config"
 	"github.com/Vilinvil/hw-security-1/internal/proxyserver/delivery/proxyhandler"
+	"github.com/Vilinvil/hw-security-1/pkg/middleware"
 	"github.com/Vilinvil/hw-security-1/pkg/myerrors"
 )
 
@@ -39,7 +40,7 @@ func (p *ProxyServer) Run(config *config.Config) error {
 
 	p.server = &http.Server{ //nolint:exhaustruct
 		Addr:           ":" + config.PortServer,
-		Handler:        proxyHandler,
+		Handler:        middleware.AccessLog(proxyHandler),
 		MaxHeaderBytes: http.DefaultMaxHeaderBytes,
 		ReadTimeout:    CoefficientReadServerTimeout * config.BasicTimeout,
 		WriteTimeout:   config.BasicTimeout,

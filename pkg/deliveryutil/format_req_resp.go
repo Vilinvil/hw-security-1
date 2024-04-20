@@ -15,12 +15,12 @@ func FormatHeadersToString(headers http.Header) string {
 	return result
 }
 
-func FormatBeginResponseToString(resp *http.Response) string {
+func FormatResponseToString(resp *http.Response) string {
 	return fmt.Sprintf("%s %d %s \n%s",
 		resp.Proto, resp.StatusCode, resp.Status, FormatHeadersToString(resp.Header))
 }
 
-func FormatBeginRequestToString(r *http.Request) string {
+func FormatRequestToString(r *http.Request) string {
 	return fmt.Sprintf("%s %s%s %s \n%s",
 		r.Method, r.Host, r.URL.Path, r.Proto, FormatHeadersToString(r.Header))
 }
