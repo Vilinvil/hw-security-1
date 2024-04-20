@@ -199,8 +199,6 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
