@@ -90,6 +90,8 @@ func ChangeRequestToTarget(r *http.Request, targetHost string) error {
 
 	r.Header.Set(acceptEncodingHeader, gzipValueHeader)
 
+	RemoveHopByHopHeaders(r.Header)
+
 	targetURL.Path = r.URL.Path
 	targetURL.RawQuery = r.URL.RawQuery
 	r.URL = targetURL

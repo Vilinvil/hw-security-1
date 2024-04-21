@@ -164,7 +164,6 @@ func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	deliveryutil.RemoveHopByHopHeaders(resp.Header)
 	deliveryutil.AddAllHeaders(w, resp.Header)
 
 	var preparedBody io.ReadCloser
@@ -233,8 +232,6 @@ func (p *ProxyHandler) doOneExchangeReqResp(connReader *bufio.Reader,
 			log.Println(err)
 		}
 	}()
-
-	deliveryutil.RemoveHopByHopHeaders(resp.Header)
 
 	if !deliveryutil.IsAcceptGzip(reqToTarget) {
 		preparedBody, err := deliveryutil.ConvertRespBodyToReadCloserWithTryDecode(resp)
