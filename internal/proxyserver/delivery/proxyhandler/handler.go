@@ -123,22 +123,24 @@ func (p *ProxyHandler) handleTunneling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tlsConn := tls.Server(clientConn, p.tlsServerConfig)
-	defer func() {
-		err = tlsConn.Close()
-		if err != nil {
-			log.Println(err)
+	go func() {
+		tlsConn := tls.Server(clientConn, p.tlsServerConfig)
+		defer func() {
+			err = tlsConn.Close()
+			if err != nil {
+				log.Println(err)
+			}
+		}()
+
+		connReader := bufio.NewReader(tlsConn)
+
+		for {
+			err = p.doOneExchangeReqResp(connReader, tlsConn, r.Host, r.RemoteAddr)
+			if err != nil {
+				break
+			}
 		}
 	}()
-
-	connReader := bufio.NewReader(tlsConn)
-
-	for {
-		err = p.doOneExchangeReqResp(connReader, tlsConn, r.Host, r.RemoteAddr)
-		if err != nil {
-			break
-		}
-	}
 }
 
 func (p *ProxyHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
