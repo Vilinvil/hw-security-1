@@ -1,4 +1,4 @@
-package proxyhandler
+package delivery
 
 import (
 	"bufio"
