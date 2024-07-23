@@ -8,7 +8,8 @@ import (
 	"net/http"
 
 	"github.com/Vilinvil/hw-security-1/internal/config"
-	"github.com/Vilinvil/hw-security-1/internal/proxyserver/delivery/proxyhandler"
+	"github.com/Vilinvil/hw-security-1/internal/proxyserver/delivery"
+	"github.com/Vilinvil/hw-security-1/pkg/middleware"
 	"github.com/Vilinvil/hw-security-1/pkg/myerrors"
 )
 
@@ -23,10 +24,10 @@ func (p *ProxyServer) Run(config *config.Config) error {
 
 	tlsServerConfig := &tls.Config{ //nolint:exhaustruct
 		ServerName: config.HostServer,
-		MinVersion: tls.VersionTLS12,
+		MinVersion: tls.VersionTLS13,
 	}
 
-	proxyHandler, err := proxyhandler.NewProxyHandler(baseCtx, &proxyhandler.Config{
+	proxyHandler, err := delivery.NewProxyHandler(baseCtx, &delivery.Config{
 		ModeTLS:         config.ModeTLS,
 		CertFileTLS:     config.CertFileTLS,
 		KeyFileTLS:      config.KeyFileTLS,
@@ -39,7 +40,7 @@ func (p *ProxyServer) Run(config *config.Config) error {
 
 	p.server = &http.Server{ //nolint:exhaustruct
 		Addr:           ":" + config.PortServer,
-		Handler:        proxyHandler,
+		Handler:        middleware.AccessLog(proxyHandler),
 		MaxHeaderBytes: http.DefaultMaxHeaderBytes,
 		ReadTimeout:    CoefficientReadServerTimeout * config.BasicTimeout,
 		WriteTimeout:   config.BasicTimeout,

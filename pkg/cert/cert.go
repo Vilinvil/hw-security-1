@@ -29,6 +29,8 @@ const (
 
 var ErrCertCA = myerrors.NewError("CA cert is not a CA")
 
+const maxDigitInSerialNumberCert = 128
+
 func GenCert(certCA *tls.Certificate, names []string) (*tls.Certificate, error) {
 	now := time.Now().Add(-1 * time.Hour).UTC()
 
@@ -38,7 +40,7 @@ func GenCert(certCA *tls.Certificate, names []string) (*tls.Certificate, error) 
 		return nil, ErrCertCA
 	}
 
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), maxDigitInSerialNumberCert)
 
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
@@ -55,26 +57,8 @@ func GenCert(certCA *tls.Certificate, names []string) (*tls.Certificate, error) 
 		KeyUsage:              leafUsage,
 		BasicConstraintsValid: true,
 		DNSNames:              names,
-		SignatureAlgorithm:    x509.SHA512WithRSA,
+		SignatureAlgorithm:    x509.SHA256WithRSA,
 	}
-
-	// TODO до конца не понял, какой тут нужно выбирать алгоритм
-	//MD2WithRSA  // Unsupported.
-	//MD5WithRSA  // Only supported for signing, not verification.
-	//SHA1WithRSA // Only supported for signing, and verification of CRLs, CSRs, and OCSP responses.
-	//SHA256WithRSA
-	//SHA384WithRSA
-	//SHA512WithRSA
-	//DSAWithSHA1   // Unsupported.
-	//DSAWithSHA256 // Unsupported.
-	//ECDSAWithSHA1 // Only supported for signing, and verification of CRLs, CSRs, and OCSP responses.
-	//ECDSAWithSHA256
-	//ECDSAWithSHA384
-	//ECDSAWithSHA512
-	//SHA256WithRSAPSS
-	//SHA384WithRSAPSS
-	//SHA512WithRSAPSS
-	//PureEd25519
 
 	key, err := genKeyPair()
 	if err != nil {

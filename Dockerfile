@@ -1,10 +1,7 @@
-FROM golang:1.21.1-alpine3.18 as build
+FROM golang:1.22.2-alpine3.19 as build
 
 WORKDIR /var/proxy
 
-RUN apk add openssl
-COPY scripts/gen_cert.sh gen_cert.sh
-RUN ./gen_cert.sh
 COPY cmd cmd
 COPY internal internal
 COPY pkg pkg
@@ -17,9 +14,9 @@ RUN go build -o main ./cmd/main.go
 FROM alpine:3.18 as production
 
 WORKDIR /var/proxy
+COPY ca.crt ca.crt
+COPY ca.key ca.key
 COPY --from=build /var/proxy/main main
-COPY --from=build /var/proxy/ca.crt ca.crt
-COPY --from=build /var/proxy/ca.key ca.key
 
 EXPOSE 8080
 
